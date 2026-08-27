@@ -2,11 +2,14 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#2D1B4E">
     <meta name="description" content="Суддівський центр для управління шаховими інструментами">
     <link rel="manifest" href="./manifest.json">
-    <link rel="apple-touch-icon" href="./icon-192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Arbiter Hub">
@@ -193,7 +196,7 @@
             margin-bottom: 50px;
         }
 
-        @media (max-width: 1024px) {
+        @media screen and (max-width: 1024px) {
             main { grid-template-columns: 1fr; }
         }
 
@@ -644,11 +647,101 @@
         .pin-box p { color: rgba(255, 255, 255, 0.6); font-size: 13px; margin-bottom: 18px; }
         .pin-error { color: var(--red); font-size: 13px; min-height: 18px; margin-top: 10px; }
 
-        @media (max-width: 600px) {
-            h1 { font-size: 34px; }
-            h2 { font-size: 26px; }
-            .avatar { width: 116px; height: 116px; }
+        /* ===== Сенсорні пристрої: hover не існує ===== */
+        @media (hover: none) {
+            /* кнопки карток мусять бути видимі завжди, інакше їх не натиснути */
+            .app-edit, .app-remove { opacity: 1; }
+            .lock-btn { opacity: 0.85; }
+            .app-card:hover { transform: none; }
+            .app-card:hover::before { left: -100%; }
+            button:hover { transform: none; box-shadow: none; }
+            .avatar:hover { transform: none; }
+            .brand:hover { transform: none; }
+        }
+
+        /* ===== Планшет ===== */
+        @media screen and (max-width: 1024px) {
+            header { padding: 30px 0; }
+            h1 { font-size: 40px; }
+            h2 { font-size: 28px; }
+            main { gap: 30px; }
+            .apps-grid,
+            body:not(.admin) .apps-grid {
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            }
+        }
+
+        /* ===== Телефон ===== */
+        @media screen and (max-width: 600px) {
+            body {
+                padding: env(safe-area-inset-top) env(safe-area-inset-right)
+                         env(safe-area-inset-bottom) env(safe-area-inset-left);
+            }
+
             .container { padding: 0 14px; }
+
+            header { padding: 24px 0 20px; margin-bottom: 26px; }
+            h1 { font-size: 30px; letter-spacing: 1px; }
+            h2 { font-size: 22px; margin-bottom: 18px; }
+            .subtitle { font-size: 15px; margin-bottom: 18px; }
+            .avatar { width: 104px; height: 104px; margin-bottom: 16px; }
+            .credit { font-size: 15px; }
+            .credit .name { font-size: 19px; }
+            .credit .badge { font-size: 11px; padding: 4px 11px; }
+
+            /* картки в одну колонку на всю ширину */
+            .apps-grid,
+            body:not(.admin) .apps-grid {
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+
+            .app-card { padding: 16px; }
+            .app-card h3 { font-size: 17px; padding-right: 74px; }
+            .app-card p { font-size: 13px; }
+
+            /* збільшені тап-цілі */
+            .app-edit, .app-remove { width: 34px; height: 34px; top: 10px; }
+            .app-edit { right: 52px; }
+            .app-remove { right: 10px; }
+
+            /* панелі складаються в стовпчик */
+            .install-bar, .admin-bar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+                text-align: center;
+            }
+            .install-bar button, .admin-bar button { width: 100%; padding: 10px; }
+
+            /* поле + кнопка одне під одним, інакше поле стискається */
+            .inline-add { flex-direction: column; }
+            .inline-add button { width: 100%; }
+
+            .form-actions { flex-direction: column; }
+
+            input, textarea, select { font-size: 16px; }  /* <16px змушує iOS зумити сторінку */
+            button { padding: 13px 20px; }
+
+            .section-head { flex-wrap: wrap; gap: 8px; }
+            .section-head button { width: auto; padding: 8px 14px; font-size: 11px; }
+
+            .lock-btn { right: 14px; bottom: 14px; width: 46px; height: 46px; font-size: 18px; }
+            #sync-status { top: 8px; right: 8px; font-size: 9px; }
+
+            footer { padding: 30px 0; }
+            .brand { width: 108px; }
+            .contact-links { flex-direction: column; align-items: center; }
+            .contact a { width: 100%; max-width: 260px; justify-content: center; }
+
+            .pin-box { width: 92%; padding: 22px 18px; }
+        }
+
+        /* ===== Дуже вузькі екрани ===== */
+        @media screen and (max-width: 360px) {
+            h1 { font-size: 26px; }
+            .avatar { width: 92px; height: 92px; }
+            .app-card h3 { padding-right: 70px; }
         }
     </style>
 </head>
@@ -1404,7 +1497,9 @@
 
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('./sw.js').catch(function () {});
+                navigator.serviceWorker.register('./sw.js')
+                    .then(function (r) { console.log('[pwa] service worker готовий', r.scope); })
+                    .catch(function (e) { console.error('[pwa] service worker не зареєструвався:', e.message); });
             });
         }
 
