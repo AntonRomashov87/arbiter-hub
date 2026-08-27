@@ -10,6 +10,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Arbiter Hub">
+    <!-- Firebase SDK v8 (UMD-збірка, працює як звичайний скрипт) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <title>Arbiter Hub — суддівський центр</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -815,46 +818,122 @@
         }
 
         // ============ Firebase синхронізація ============
+        // ВАЖЛИВО: databaseURL береться зі сторінки Realtime Database у консолі Firebase.
+        // Він написаний угорі, над таблицею даних, і виглядає як один із двох варіантів:
+        //   https://smart-chess-arbiter-hub-default-rtdb.firebaseio.com                     (регіон us-central1)
+        //   https://smart-chess-arbiter-hub-default-rtdb.europe-west1.firebasedatabase.app  (європейський регіон)
+        var FB_DB_URL = 'https://smart-chess-arbiter-hub-default-rtdb.europe-west1.firebasedatabase.app';
+
+        // Один спільний вузол для всіх пристроїв — саме це робить синхронізацію можливою.
+        var FB_NODE = 'arbiters/anton';
+
+        var fbDb = null;
         var fbReady = false;
-        var fbUserId = localStorage.getItem('arbiterHubUserId') || ('user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9));
-        localStorage.setItem('arbiterHubUserId', fbUserId);
-        
-        function initFirebase() {
-            if (!window.firebase) return;
-            try {
-                var fbConfig = {
-                    apiKey: "AIzaSyDcbVuoZEDq_5EPZV0MBTAAUTottu53sls",
-                    authDomain: "smart-chess-arbiter-hub.firebaseapp.com",
-                    projectId: "smart-chess-arbiter-hub",
-                    storageBucket: "smart-chess-arbiter-hub.firebasestorage.app",
-                    messagingSenderId: "720664659983",
-                    appId: "1:720664659983:web:97e1db832e033ddcbbfb7a"
-                };
-                firebase.initializeApp(fbConfig);
-                var db = firebase.database();
-                var syncEl = document.getElementById('sync-status') || document.createElement('div');
+        var applyingRemote = false;   // захист від луни: віддалені дані не пишемо назад
+        var syncEl = null;
+
+        function syncStatus(text, color) {
+            if (!syncEl) {
+                syncEl = document.createElement('div');
                 syncEl.id = 'sync-status';
-                syncEl.style.cssText = 'position:fixed;top:12px;right:12px;font-size:10px;background:rgba(212,175,55,0.15);border:1px solid #D4AF37;color:#D4AF37;padding:4px 8px;border-radius:3px;z-index:9999;font-family:monospace;letter-spacing:0.5px';
-                syncEl.textContent = '⟳ Синхронізація...';
-                if (!document.getElementById('sync-status')) document.body.appendChild(syncEl);
-                
-                db.ref('arbiters/' + fbUserId + '/data').on('value', function(snap) {
-                    fbReady = true;
-                    syncEl.textContent = '✓ Синхронізовано';
-                    syncEl.style.background = 'rgba(74,222,128,0.15)';
-                    syncEl.style.borderColor = '#4ade80';
-                    syncEl.style.color = '#4ade80';
-                }, function() {
-                    fbReady = false;
-                    syncEl.textContent = '⊗ Офлайн';
-                    syncEl.style.background = 'rgba(248,113,113,0.15)';
-                    syncEl.style.borderColor = '#f87171';
-                    syncEl.style.color = '#f87171';
+                syncEl.style.cssText = 'position:fixed;top:12px;right:12px;font-size:10px;padding:4px 8px;' +
+                    'border-radius:3px;z-index:9999;font-family:monospace;letter-spacing:0.5px;border:1px solid;' +
+                    'background:rgba(0,0,0,0.35)';
+                document.body.appendChild(syncEl);
+            }
+            syncEl.textContent = text;
+            syncEl.style.color = color;
+            syncEl.style.borderColor = color;
+        }
+
+        // Застосовуємо дані з хмари до застосунку
+        function applyRemote(data) {
+            if (!data) return;
+            applyingRemote = true;
+
+            if (Array.isArray(data[KEY_APPS])) {
+                apps = data[KEY_APPS];
+                localStorage.setItem(KEY_APPS, JSON.stringify(apps));
+                renderApps();
+            }
+            if (Array.isArray(data[KEY_CHECK])) {
+                checklist = data[KEY_CHECK];
+                localStorage.setItem(KEY_CHECK, JSON.stringify(checklist));
+                renderChecklist();
+            }
+            if (Array.isArray(data[KEY_REFS])) {
+                refs = data[KEY_REFS];
+                localStorage.setItem(KEY_REFS, JSON.stringify(refs));
+                renderRefs();
+            }
+
+            applyingRemote = false;
+        }
+
+        // Перше завантаження: якщо в хмарі порожньо — заливаємо туди те, що вже є локально
+        function pushAllLocal() {
+            if (!fbDb) return;
+            var dump = {};
+            dump[KEY_APPS] = apps;
+            dump[KEY_CHECK] = checklist;
+            dump[KEY_REFS] = refs;
+            fbDb.ref(FB_NODE).set(dump).catch(function (e) {
+                console.error('[sync] не вдалося залити локальні дані:', e.message);
+            });
+        }
+
+        function initFirebase() {
+            if (!window.firebase) {
+                console.error('[sync] Firebase SDK не завантажився');
+                syncStatus('\u2297 SDK не завантажено', '#f87171');
+                return;
+            }
+            try {
+                firebase.initializeApp({
+                    apiKey: 'AIzaSyDcbVuoZEDq_5EPZV0MBTAAUTottu53sls',
+                    authDomain: 'smart-chess-arbiter-hub.firebaseapp.com',
+                    databaseURL: FB_DB_URL,
+                    projectId: 'smart-chess-arbiter-hub',
+                    storageBucket: 'smart-chess-arbiter-hub.firebasestorage.app',
+                    messagingSenderId: '720664659983',
+                    appId: '1:720664659983:web:97e1db832e033ddcbbfb7a'
                 });
-                
-                window.fbDb = db;
-                window.fbUserId = fbUserId;
-            } catch (e) { console.log('Firebase init skipped:', e.message); }
+                fbDb = firebase.database();
+            } catch (e) {
+                console.error('[sync] помилка ініціалізації:', e.message);
+                syncStatus('\u2297 Помилка Firebase', '#f87171');
+                return;
+            }
+
+            syncStatus('\u27F3 Підключення...', '#D4AF37');
+
+            // Індикатор зв'язку
+            fbDb.ref('.info/connected').on('value', function (snap) {
+                if (snap.val() === true) {
+                    syncStatus('\u2713 Синхронізовано', '#4ade80');
+                } else {
+                    syncStatus('\u2297 Офлайн', '#f87171');
+                }
+            });
+
+            // Двостороння синхронізація: слухаємо зміни з будь-якого пристрою
+            var first = true;
+            fbDb.ref(FB_NODE).on('value', function (snap) {
+                fbReady = true;
+                var data = snap.val();
+
+                if (!data) {
+                    if (first) pushAllLocal();   // хмара порожня — віддаємо їй свої дані
+                } else {
+                    applyRemote(data);
+                }
+                first = false;
+            }, function (err) {
+                fbReady = false;
+                console.error('[sync] відмова доступу:', err.message,
+                    '\u2014 перевір правила Realtime Database у консолі Firebase');
+                syncStatus('\u2297 Немає доступу', '#f87171');
+            });
         }
 
         function load(key, fallback) {
@@ -871,16 +950,16 @@
         function save(key, value) {
             try {
                 localStorage.setItem(key, JSON.stringify(value));
-                // Синхронізація в Firebase без блокування
-                if (window.fbDb && fbReady) {
-                    try {
-                        window.fbDb.ref('arbiters/' + fbUserId + '/data/' + key).set(value).catch(function() {});
-                    } catch (e) {}
-                }
-                return true;
             } catch (e) {
                 return false;
             }
+            // У хмару пишемо лише власні зміни, не ті, що щойно прийшли з неї
+            if (fbDb && fbReady && !applyingRemote) {
+                fbDb.ref(FB_NODE + '/' + key).set(value).catch(function (e) {
+                    console.error('[sync] запис не пройшов:', e.message);
+                });
+            }
+            return true;
         }
 
         function isAdmin() { return document.body.classList.contains('admin'); }
@@ -1319,8 +1398,5 @@
     })();
     </script>
 
-    <!-- Firebase SDK v9 (UMD compatible) -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"></script>
 </body>
 </html>
